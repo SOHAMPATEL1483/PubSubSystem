@@ -1,5 +1,7 @@
 #include <iostream>
 #include <string>
+#include <vector>
+#include <sstream>
 #include <cstring>
 #include <arpa/inet.h>
 #include <unistd.h>
@@ -7,15 +9,28 @@
 #define BUFFER_SIZE 1024
 #define PORT 8080
 
-void subscribe(const std::string &topic);
+void subscribe(const std::vector<std::string> &topics);
 
 int main()
 {
-    subscribe("sports");
+    std::cout << "Enter Number of Topics: ";
+    int num_topics;
+    std::cin >> num_topics;
+
+    std::vector<std::string> topics;
+    for (int i = 0; i < num_topics; i++)
+    {
+        std::string topic;
+        std::cout << "Enter Topic " << i + 1 << ": ";
+        std::cin >> topic;
+        topics.push_back(topic);
+    }
+    // Subscribing to multiple topics
+    subscribe(topics);
     return 0;
 }
 
-void subscribe(const std::string &topic)
+void subscribe(const std::vector<std::string> &topics)
 {
     int sock = 0;
     struct sockaddr_in serv_addr;
@@ -47,11 +62,15 @@ void subscribe(const std::string &topic)
         return;
     }
 
-    // Formatting and sending the subscribe message
-    std::string subscribe_message = "SUBSCRIBE " + topic;
-    send(sock, subscribe_message.c_str(), subscribe_message.size(), 0);
+    std::ostringstream subscribe_message;
+    subscribe_message << "SUBSCRIBE";
+    for (const auto &topic : topics)
+    {
+        subscribe_message << " " << topic;
+    }
+    std::string message = subscribe_message.str();
+    send(sock, message.c_str(), message.size(), 0);
 
-    // Receiving messages in a loop
     while (true)
     {
         int bytes_read = read(sock, buffer, BUFFER_SIZE - 1);
@@ -62,6 +81,5 @@ void subscribe(const std::string &topic)
         std::cout << "Received message: " << buffer << std::endl;
     }
 
-    // Closing the socket
     close(sock);
 }

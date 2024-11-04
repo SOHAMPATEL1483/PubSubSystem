@@ -5,25 +5,19 @@
 #include <cstring>
 #include <thread>
 #include <mutex>
+#include <unordered_map>
+#include <unordered_set>
 #include <arpa/inet.h>
 #include <unistd.h>
 
-#define MAX_CLIENTS 100
 #define BUFFER_SIZE 1024
 #define PORT 8080
 
-struct Subscriber
-{
-    int socket;
-    std::string topic;
-};
-
-std::vector<Subscriber> subscribers;
+std::unordered_map<std::string, std::vector<int>> topic_subscribers;
 std::mutex lock;
 
 void handle_client(int client_socket);
-void publish_message(const std::string &topic, const std::string &message);
-
+void publish_message(const std::vector<std::string> &topics, const std::string &message);
 int main()
 {
     int server_fd, new_socket;
@@ -81,42 +75,71 @@ void handle_client(int client_socket)
 
     if (strncmp(buffer, "SUBSCRIBE", 9) == 0)
     {
-        // Handle subscription
-        std::string topic(buffer + 10);
+        // Handle multiple topic subscriptions
+        std::istringstream iss(buffer + 10);
+        std::string topic;
 
         std::lock_guard<std::mutex> guard(lock);
-        if (subscribers.size() < MAX_CLIENTS)
+
+        // Parse each topic and add the client socket to the list of subscribers for that topic
+        while (iss >> topic)
         {
-            subscribers.push_back({client_socket, topic});
-            std::cout << "New subscriber added to topic: " << topic << std::endl;
-        }
-        else
-        {
-            std::cout << "Max subscriber limit reached." << std::endl;
+            topic_subscribers[topic].push_back(client_socket);
+            std::cout << "Subscriber added to topic: " << topic << std::endl;
         }
     }
     else if (strncmp(buffer, "PUBLISH", 7) == 0)
     {
-        // Handle publishing
-        std::string topic, message;
         std::istringstream iss(buffer + 8);
-        iss >> topic;
-        std::getline(iss, message);
-        publish_message(topic, message);
+        std::vector<std::string> topics;
+        std::string word;
+
+        while (iss >> word)
+        {
+            if (word[0] == '!')
+            {
+                std::string message = word.substr(1) + " ";
+                std::string remainder;
+                std::getline(iss, remainder); // Get the rest of the message line
+                message += remainder;
+                publish_message(topics, message);
+                break;
+            }
+            else
+            {
+                topics.push_back(word);
+            }
+        }
+
         close(client_socket);
     }
 }
 
-void publish_message(const std::string &topic, const std::string &message)
+void publish_message(const std::vector<std::string> &topics, const std::string &message)
 {
-    std::cout << "Publishing message to topic '" << topic << "': " << message << std::endl;
+    std::cout << "Publishing message to topics [";
+    for (const auto &topic : topics)
+    {
+        std::cout << topic << " ";
+    }
+    std::cout << "]: " << message << std::endl;
 
     std::lock_guard<std::mutex> guard(lock);
-    for (const auto &subscriber : subscribers)
+
+    std::unordered_set<int> notified_subscribers;
+
+    for (const auto &topic : topics)
     {
-        if (subscriber.topic == topic)
+        if (topic_subscribers.count(topic))
         {
-            send(subscriber.socket, message.c_str(), message.size(), 0);
+            for (const auto &subscriber_socket : topic_subscribers[topic])
+            {
+                if (!notified_subscribers.count(subscriber_socket))
+                {
+                    send(subscriber_socket, message.c_str(), message.size(), 0);
+                    notified_subscribers.insert(subscriber_socket);
+                }
+            }
         }
     }
 }
