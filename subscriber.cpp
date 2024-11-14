@@ -1,85 +1,56 @@
+#include <thrift/Thrift.h>
+#include <thrift/protocol/TBinaryProtocol.h>
+#include <thrift/transport/TSocket.h>
+#include <thrift/transport/TBufferTransports.h>
+#include "gen-cpp/pubsub_types.h"
+#include "gen-cpp/BrokerService.h"
+
 #include <iostream>
-#include <string>
-#include <vector>
-#include <sstream>
-#include <cstring>
-#include <arpa/inet.h>
-#include <unistd.h>
 
-#define BUFFER_SIZE 1024
-#define PORT 8080
+using namespace apache::thrift;
+using namespace apache::thrift::protocol;
+using namespace apache::thrift::transport;
+using namespace PubSub;
 
-void subscribe(const std::vector<std::string> &topics);
-
-int main()
+void registerSubscriber(const std::string &broker_address, const std::string &topic, const std::string &subscriber_id)
 {
-    std::cout << "Enter Number of Topics: ";
-    int num_topics;
-    std::cin >> num_topics;
+    std::shared_ptr<TTransport> socket(new TSocket(broker_address, 9090));
+    std::shared_ptr<TTransport> transport(new TBufferedTransport(socket));
+    std::shared_ptr<TProtocol> protocol(new TBinaryProtocol(transport));
 
-    std::vector<std::string> topics;
-    for (int i = 0; i < num_topics; i++)
+    BrokerServiceClient client(protocol);
+    transport->open();
+
+    SubscriptionRequest request;
+    request.topic = topic;
+    request.subscriber_id = subscriber_id;
+
+    SubscriptionResponse response;
+    client.registerSubscriber(response, request);
+
+    if (response.success)
     {
-        std::string topic;
-        std::cout << "Enter Topic " << i + 1 << ": ";
-        std::cin >> topic;
-        topics.push_back(topic);
+        std::cout << "Subscriber registered successfully for topic: " << topic << std::endl;
     }
-    // Subscribing to multiple topics
-    subscribe(topics);
-    return 0;
+    else
+    {
+        std::cerr << "Failed to register subscriber" << std::endl;
+    }
+
+    transport->close();
 }
 
-void subscribe(const std::vector<std::string> &topics)
+int main(int argc, char **argv)
 {
-    int sock = 0;
-    struct sockaddr_in serv_addr;
-    char buffer[BUFFER_SIZE];
-
-    // Creating socket
-    if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+    if (argc != 4)
     {
-        std::cerr << "Socket creation error" << std::endl;
-        return;
+        std::cerr << "Usage: " << argv[0] << " <broker_address> <topic> <subscriber_id>" << std::endl;
+        return 1;
     }
+    std::string broker_address = argv[1];
+    std::string topic = argv[2];
+    std::string subscriber_id = argv[3];
 
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_port = htons(PORT);
-
-    // Converting IP address
-    if (inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr) <= 0)
-    {
-        std::cerr << "Invalid address" << std::endl;
-        close(sock);
-        return;
-    }
-
-    // Connecting to server
-    if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
-    {
-        std::cerr << "Connection failed" << std::endl;
-        close(sock);
-        return;
-    }
-
-    std::ostringstream subscribe_message;
-    subscribe_message << "SUBSCRIBE";
-    for (const auto &topic : topics)
-    {
-        subscribe_message << " " << topic;
-    }
-    std::string message = subscribe_message.str();
-    send(sock, message.c_str(), message.size(), 0);
-
-    while (true)
-    {
-        int bytes_read = read(sock, buffer, BUFFER_SIZE - 1);
-        if (bytes_read <= 0)
-            break;
-
-        buffer[bytes_read] = '\0';
-        std::cout << "Received message: " << buffer << std::endl;
-    }
-
-    close(sock);
+    registerSubscriber(broker_address, topic, subscriber_id);
+    return 0;
 }

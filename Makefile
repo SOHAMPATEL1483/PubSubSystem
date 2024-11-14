@@ -1,27 +1,37 @@
+# Define the compiler and flags
 CXX = g++
+CXXFLAGS = -std=c++11 -I/usr/local/include
+LDFLAGS = -lthrift -pthread
 
-CXXFLAGS = -Wall 
+# Define the source files
+SOURCES = broker.cpp publisher.cpp subscriber.cpp
+GEN_CPP_DIR = gen-cpp
+THRIFT_CPP_FILES = $(GEN_CPP_DIR)/BrokerService.cpp $(GEN_CPP_DIR)/BrokerService.h $(GEN_CPP_DIR)/pubsub_types.cpp $(GEN_CPP_DIR)/pubsub_types.h 
+# THRIFT_CPP_FILES = $(wildcard $(GEN_CPP_DIR)/*.cpp)
 
+# Define the output executables
+BROKER = broker
+PUBLISHER = publisher
+SUBSCRIBER = subscriber
 
-BROKER_EXEC = broker
-SUBSCRIBER_EXEC = subscriber
-PUBLISHER_EXEC = publisher
+# Default target to build everything
+all: $(BROKER) $(PUBLISHER) $(SUBSCRIBER)
 
+# Rule to build the Broker
+$(BROKER): Broker.cpp $(THRIFT_CPP_FILES)
+	$(CXX) $(CXXFLAGS) -o $(BROKER) Broker.cpp $(THRIFT_CPP_FILES) $(LDFLAGS)
 
-BROKER_SRC = broker.cpp
-SUBSCRIBER_SRC = subscriber.cpp
-PUBLISHER_SRC = publisher.cpp
+# Rule to build the Publisher
+$(PUBLISHER): Publisher.cpp $(THRIFT_CPP_FILES)
+	$(CXX) $(CXXFLAGS) -o $(PUBLISHER) Publisher.cpp $(THRIFT_CPP_FILES) $(LDFLAGS)
 
-all: $(BROKER_EXEC) $(SUBSCRIBER_EXEC) $(PUBLISHER_EXEC)
+# Rule to build the Subscriber
+$(SUBSCRIBER): Subscriber.cpp $(THRIFT_CPP_FILES)
+	$(CXX) $(CXXFLAGS) -o $(SUBSCRIBER) Subscriber.cpp $(THRIFT_CPP_FILES) $(LDFLAGS)
 
-$(BROKER_EXEC): $(BROKER_SRC)
-	$(CXX) $(CXXFLAGS) $(BROKER_SRC) -o $(BROKER_EXEC) 
-
-$(SUBSCRIBER_EXEC): $(SUBSCRIBER_SRC)
-	$(CXX) $(CXXFLAGS) $(SUBSCRIBER_SRC) -o $(SUBSCRIBER_EXEC) 
-
-$(PUBLISHER_EXEC): $(PUBLISHER_SRC)
-	$(CXX) $(CXXFLAGS) $(PUBLISHER_SRC) -o $(PUBLISHER_EXEC) 
-
+# Clean up generated files
 clean:
-	rm -f $(BROKER_EXEC) $(SUBSCRIBER_EXEC) $(PUBLISHER_EXEC)
+	rm -f $(BROKER) $(PUBLISHER) $(SUBSCRIBER)
+
+# PHONY targets
+.PHONY: all clean

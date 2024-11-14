@@ -1,82 +1,56 @@
+#include <thrift/Thrift.h>
+#include <thrift/protocol/TBinaryProtocol.h>
+#include <thrift/transport/TSocket.h>
+#include <thrift/transport/TBufferTransports.h>
+#include "gen-cpp/pubsub_types.h"
+#include "gen-cpp/BrokerService.h"
+
 #include <iostream>
-#include <string>
-#include <vector>
-#include <sstream>
-#include <cstring>
-#include <arpa/inet.h>
-#include <unistd.h>
 
-#define BUFFER_SIZE 1024
-#define PORT 8080
+using namespace apache::thrift;
+using namespace apache::thrift::protocol;
+using namespace apache::thrift::transport;
+using namespace PubSub;
 
-void publish(const std::vector<std::string> &topics, const std::string &message);
-
-int main()
+void publishMessage(const std::string &broker_address, const std::string &topic, const std::string &message)
 {
-    std::cout << "Enter Number of Topics: ";
-    int num_topics;
-    std::cin >> num_topics;
+    std::shared_ptr<TTransport> socket(new TSocket(broker_address, 9090));
+    std::shared_ptr<TTransport> transport(new TBufferedTransport(socket));
+    std::shared_ptr<TProtocol> protocol(new TBinaryProtocol(transport));
 
-    std::vector<std::string> topics;
-    for (int i = 0; i < num_topics; i++)
+    BrokerServiceClient client(protocol);
+    transport->open();
+
+    PublishRequest request;
+    request.topic = topic;
+    request.message_data = message;
+
+    PublishResponse response;
+    client.publishMessage(response, request);
+
+    if (response.success)
     {
-        std::string topic;
-        std::cout << "Enter Topic " << i + 1 << ": ";
-        std::cin >> topic;
-        topics.push_back(topic);
+        std::cout << "Message published successfully to topic: " << topic << std::endl;
     }
-    std::string message;
-    std::cout << "Enter Message: ";
-    std::cin >> message;
-    publish(topics, message);
-    return 0;
+    else
+    {
+        std::cerr << "Failed to publish message" << std::endl;
+    }
+
+    transport->close();
 }
 
-void publish(const std::vector<std::string> &topics, const std::string &message)
+int main(int argc, char **argv)
 {
-    int sock = 0;
-    struct sockaddr_in serv_addr;
-
-    // Creating socket
-    if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+    if (argc != 4)
     {
-        std::cerr << "Socket creation error" << std::endl;
-        return;
+        std::cerr << "Usage: " << argv[0] << " <broker_address> <topic> <message>" << std::endl;
+        return 1;
     }
+    std::string broker_address = argv[1];
+    std::string topic = argv[2];
+    std::string message = argv[3];
 
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_port = htons(PORT);
-
-    // Converting IP address
-    if (inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr) <= 0)
-    {
-        std::cerr << "Invalid address" << std::endl;
-        close(sock);
-        return;
-    }
-
-    // Connecting to server
-    if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
-    {
-        std::cerr << "Connection failed" << std::endl;
-        close(sock);
-        return;
-    }
-
-    // Formatting the publish message with multiple topics and delimiter before the message
-    std::ostringstream oss;
-    oss << "PUBLISH";
-    for (const auto &topic : topics)
-    {
-        oss << " " << topic;
-    }
-    oss << " !" << message; // Add "!" before the message
-
-    std::string publish_message = oss.str();
-
-    // Sending the formatted message to the server
-    send(sock, publish_message.c_str(), publish_message.size(), 0);
-
-    // Closing the socket
-    close(sock);
+    publishMessage(broker_address, topic, message);
+    return 0;
 }
