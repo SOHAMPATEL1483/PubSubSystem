@@ -37,6 +37,17 @@ struct SyncResponse {
     1: bool success;
 }
 
+struct GetMessagesRequest {
+    1: string topic;
+    2: string subscriber_id; // Identify which subscriber is requesting the messages
+}
+
+struct GetMessagesResponse {
+    1: bool success;
+    2: list<string> messages;
+    3: string message; // Optional message for status or feedback
+}
+
 // Define an exception
 exception SubscriptionException {
     1: string message;
@@ -46,6 +57,7 @@ exception SubscriptionException {
 service BrokerService {
     SubscriptionResponse registerSubscriber(1: SubscriptionRequest request);
     PublishResponse publishMessage(1: PublishRequest request);
-    NotifyResponse notifySubscribers(1: NotifyRequest request);
-    SyncResponse syncBrokers(1: SyncRequest request);
+    // NotifyResponse notifySubscribers(1: NotifyRequest request);
+    // SyncResponse syncBrokers(1: SyncRequest request);
+    GetMessagesResponse getMessages(1: GetMessagesRequest request); // New method added
 }

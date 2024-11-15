@@ -23,6 +23,7 @@ class BrokerServiceHandler : public BrokerServiceIf
 private:
     std::map<std::string, std::set<std::string>> topic_subscribers;
     std::map<std::string, std::vector<std::string>> topic_messages;
+    std::map<std::string, std::map<std::string, size_t>> last_read_index; // topic -> (subscriber_id -> last index)
     std::mutex mutex_;
 
 public:
@@ -30,7 +31,8 @@ public:
     {
         std::lock_guard<std::mutex> lock(mutex_);
         topic_subscribers[request.topic].insert(request.subscriber_id);
-        std::cout << "Subscriber registered successfully for topic: " << request.topic << std::endl;
+        last_read_index[request.topic][request.subscriber_id] = 0;
+        std::cout << "Subscriber " << request.subscriber_id << " registered for topic: " << request.topic << std::endl;
         _return.success = true;
         _return.message = "Subscriber registered successfully.";
     }
@@ -39,42 +41,33 @@ public:
     {
         std::lock_guard<std::mutex> lock(mutex_);
         topic_messages[request.topic].push_back(request.message_data);
+        std::cout << "Message published to topic: " << request.topic << " - " << request.message_data << std::endl;
         _return.success = true;
     }
 
-    void notifySubscribers(NotifyResponse &_return, const NotifyRequest &request) override
+    void getMessages(GetMessagesResponse &_return, const GetMessagesRequest &request) override
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (topic_subscribers.find(request.topic) == topic_subscribers.end())
+        const std::string &topic = request.topic;
+
+        if (topic_messages.find(topic) == topic_messages.end() || topic_subscribers[topic].find(request.subscriber_id) == topic_subscribers[topic].end())
         {
             _return.success = false;
+            _return.message = "No messages for the requested topic or subscriber is not registered.";
             return;
         }
 
-        for (const auto &subscriber : topic_subscribers[request.topic])
+        size_t last_index = last_read_index[topic][request.subscriber_id];
+        if (last_index >= topic_messages[topic].size())
         {
-            std::cout << "Notifying subscriber " << subscriber << " about topic: " << request.topic << " with message: " << request.message_data << "\n";
+            _return.success = true;
+            _return.message = "No new messages.";
+            return;
         }
 
-        _return.success = true;
-    }
-
-    void syncBrokers(SyncResponse &_return, const SyncRequest &request) override
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        for (const auto &topic : request.topics)
-        {
-            if (topic_messages.find(topic) == topic_messages.end())
-            {
-                topic_messages[topic] = {};
-            }
-        }
-
-        for (const auto &log_entry : request.message_logs)
-        {
-            topic_messages[log_entry.first].push_back(log_entry.second);
-        }
-
+        // Collect new messages for the subscriber
+        _return.messages.assign(topic_messages[topic].begin() + last_index, topic_messages[topic].end());
+        last_read_index[topic][request.subscriber_id] = topic_messages[topic].size();
         _return.success = true;
     }
 };
