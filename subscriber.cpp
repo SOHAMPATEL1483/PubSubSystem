@@ -14,9 +14,9 @@ using namespace apache::thrift::protocol;
 using namespace apache::thrift::transport;
 using namespace PubSub;
 
-void pollMessages(const std::string &subscriber_id, const std::string &topic)
+void pollMessages(const std::string &broker_address, const int port, const std::string &subscriber_id, const std::string &topic)
 {
-    std::shared_ptr<TTransport> socket(new TSocket("localhost", 9090)); // Broker's port
+    std::shared_ptr<TTransport> socket(new TSocket(broker_address, port)); // Broker's port
     std::shared_ptr<TTransport> transport(new TBufferedTransport(socket));
     std::shared_ptr<TProtocol> protocol(new TBinaryProtocol(transport));
     BrokerServiceClient client(protocol);
@@ -63,13 +63,20 @@ void pollMessages(const std::string &subscriber_id, const std::string &topic)
     }
 }
 
-int main()
+int main(int argc, char **argv)
 {
-    std::string subscriber_id = "sub1"; // Example subscriber ID
-    std::string topic = "abc";          // Example topic
+    if (argc != 5)
+    {
+        std::cerr << "Usage: " << argv[0] << " <broker_address> <port> <topic> <subscriber_id>" << std::endl;
+        return 1;
+    }
+    std::string broker_address = argv[1];
+    int port = std::stoi(argv[2]);
+    std::string topic = argv[3];
+    std::string subscriber_id = argv[4];
 
     // Register the subscriber
-    std::shared_ptr<TTransport> socket(new TSocket("localhost", 9090)); // Broker's port
+    std::shared_ptr<TTransport> socket(new TSocket(broker_address, port)); // Broker's port
     std::shared_ptr<TTransport> transport(new TBufferedTransport(socket));
     std::shared_ptr<TProtocol> protocol(new TBinaryProtocol(transport));
     BrokerServiceClient client(protocol);
@@ -89,7 +96,7 @@ int main()
             std::cout << "Subscriber " << subscriber_id << " registered successfully for topic: " << topic << std::endl;
 
             // Start the polling function in a separate thread
-            std::thread pollThread(pollMessages, subscriber_id, topic);
+            std::thread pollThread(pollMessages, broker_address, port, subscriber_id, topic);
             pollThread.join(); // Wait for the thread to complete (or run indefinitely)
         }
         else

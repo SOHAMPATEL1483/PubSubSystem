@@ -1,7 +1,7 @@
 # Define the compiler and flags
 CXX = g++
-CXXFLAGS = -std=c++11 -I/usr/local/include
-LDFLAGS = -lthrift -pthread
+CXXFLAGS = -std=c++17 -I/usr/local/include
+LDFLAGS = -lthrift -lhiredis -lredis++ -pthread
 
 # Define the source files
 SOURCES = broker.cpp publisher.cpp subscriber.cpp

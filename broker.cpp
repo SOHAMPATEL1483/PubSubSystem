@@ -5,34 +5,34 @@
 #include <thrift/server/TThreadedServer.h>
 #include "gen-cpp/pubsub_types.h"
 #include "gen-cpp/BrokerService.h"
-
+#include <sw/redis++/redis++.h>
 #include <iostream>
 #include <map>
 #include <set>
 #include <vector>
 #include <mutex>
+#include <sstream>
 
 using namespace apache::thrift;
 using namespace apache::thrift::protocol;
 using namespace apache::thrift::transport;
 using namespace apache::thrift::server;
 using namespace PubSub;
+using namespace sw::redis;
 
 class BrokerServiceHandler : public BrokerServiceIf
 {
 private:
-    std::map<std::string, std::set<std::string>> topic_subscribers;
-    std::map<std::string, std::vector<std::string>> topic_messages;
-    std::map<std::string, std::map<std::string, size_t>> last_read_index; // topic -> (subscriber_id -> last index)
     std::mutex mutex_;
+    Redis redis;
 
 public:
+    BrokerServiceHandler() : redis("tcp://127.0.0.1:6379") {}
+
     void registerSubscriber(SubscriptionResponse &_return, const SubscriptionRequest &request) override
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        topic_subscribers[request.topic].insert(request.subscriber_id);
-        last_read_index[request.topic][request.subscriber_id] = 0;
-        std::cout << "Subscriber " << request.subscriber_id << " registered for topic: " << request.topic << std::endl;
+        registerSubscriberInRedis(request.topic, request.subscriber_id);
         _return.success = true;
         _return.message = "Subscriber registered successfully.";
     }
@@ -40,41 +40,90 @@ public:
     void publishMessage(PublishResponse &_return, const PublishRequest &request) override
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        topic_messages[request.topic].push_back(request.message_data);
-        std::cout << "Message published to topic: " << request.topic << " - " << request.message_data << std::endl;
+        storeMessageInRedis(request.topic, request.message_data);
+        std::cout << "Message published and stored in Redis for topic: " << request.topic << std::endl;
         _return.success = true;
     }
 
     void getMessages(GetMessagesResponse &_return, const GetMessagesRequest &request) override
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        const std::string &topic = request.topic;
 
-        if (topic_messages.find(topic) == topic_messages.end() || topic_subscribers[topic].find(request.subscriber_id) == topic_subscribers[topic].end())
+        // Get the messages for the requested topic
+        auto messages = getMessagesFromRedis(request.topic);
+
+        // Get the last read index for the subscriber
+        size_t last_read_index = getLastReadIndexFromRedis(request.topic, request.subscriber_id);
+
+        // Get only the unread messages
+        std::vector<std::string> unread_messages;
+        for (size_t i = last_read_index; i < messages.size(); ++i)
         {
-            _return.success = false;
-            _return.message = "No messages for the requested topic or subscriber is not registered.";
-            return;
+            unread_messages.push_back(messages[i]);
         }
 
-        size_t last_index = last_read_index[topic][request.subscriber_id];
-        if (last_index >= topic_messages[topic].size())
+        // Respond with unread messages
+        if (!unread_messages.empty())
         {
             _return.success = true;
-            _return.message = "No new messages.";
-            return;
-        }
+            _return.messages = unread_messages;
 
-        // Collect new messages for the subscriber
-        _return.messages.assign(topic_messages[topic].begin() + last_index, topic_messages[topic].end());
-        last_read_index[topic][request.subscriber_id] = topic_messages[topic].size();
-        _return.success = true;
+            // Update the last read index for the subscriber
+            updateLastReadIndexInRedis(request.topic, request.subscriber_id, messages.size());
+        }
+        else
+        {
+            _return.success = false;
+            _return.message = "No new messages.";
+        }
+    }
+
+private:
+    void registerSubscriberInRedis(const std::string &topic, const std::string &subscriber_id)
+    {
+        redis.sadd("topic_subscribers:" + topic, subscriber_id);
+        std::cout << "Subscriber " << subscriber_id << " registered for topic: " << topic << " in Redis." << std::endl;
+    }
+
+    void storeMessageInRedis(const std::string &topic, const std::string &message)
+    {
+        redis.rpush("topic_messages:" + topic, message);
+        std::cout << "Message stored for topic: " << topic << " in Redis." << std::endl;
+    }
+
+    std::set<std::string> getSubscribersFromRedis(const std::string &topic)
+    {
+        std::set<std::string> subscribers;
+        redis.smembers("topic_subscribers:" + topic, std::inserter(subscribers, subscribers.end())); // Use std::inserter
+        return subscribers;
+    }
+
+    std::vector<std::string> getMessagesFromRedis(const std::string &topic)
+    {
+        std::vector<std::string> messages;
+        redis.lrange("topic_messages:" + topic, 0, -1, std::back_inserter(messages)); // Pass the output iterator
+        return messages;
+    }
+
+    size_t getLastReadIndexFromRedis(const std::string &topic, const std::string &subscriber_id)
+    {
+        std::string key = "last_read_index:" + topic;
+        auto index = redis.hget(key, subscriber_id);
+        return index ? std::stoul(*index) : 0; // Default to 0 if not found
+    }
+
+    void updateLastReadIndexInRedis(const std::string &topic, const std::string &subscriber_id, size_t index)
+    {
+        std::string key = "last_read_index:" + topic;
+        redis.hset(key, subscriber_id, std::to_string(index));
     }
 };
 
 int main()
 {
-    int port = 9090;
+    int port;
+    std::cout << "Enter port number: ";
+    std::cin >> port;
     std::shared_ptr<TServerTransport> serverTransport(new TServerSocket(port));
     std::shared_ptr<TTransportFactory> transportFactory(new TBufferedTransportFactory());
     std::shared_ptr<TProtocolFactory> protocolFactory(new TBinaryProtocolFactory());

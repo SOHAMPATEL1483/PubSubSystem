@@ -12,9 +12,9 @@ using namespace apache::thrift::protocol;
 using namespace apache::thrift::transport;
 using namespace PubSub;
 
-void publishMessage(const std::string &broker_address, const std::string &topic, const std::string &message)
+void publishMessage(const std::string &broker_address, const int port, const std::string &topic, const std::string &message)
 {
-    std::shared_ptr<TTransport> socket(new TSocket(broker_address, 9090));
+    std::shared_ptr<TTransport> socket(new TSocket(broker_address, port));
     std::shared_ptr<TTransport> transport(new TBufferedTransport(socket));
     std::shared_ptr<TProtocol> protocol(new TBinaryProtocol(transport));
 
@@ -42,15 +42,16 @@ void publishMessage(const std::string &broker_address, const std::string &topic,
 
 int main(int argc, char **argv)
 {
-    if (argc != 4)
+    if (argc != 5)
     {
-        std::cerr << "Usage: " << argv[0] << " <broker_address> <topic> <message>" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " <broker_address> <port> <topic> <message>" << std::endl;
         return 1;
     }
     std::string broker_address = argv[1];
-    std::string topic = argv[2];
-    std::string message = argv[3];
+    int port = std::stoi(argv[2]);
+    std::string topic = argv[3];
+    std::string message = argv[4];
 
-    publishMessage(broker_address, topic, message);
+    publishMessage(broker_address, port, topic, message);
     return 0;
 }
