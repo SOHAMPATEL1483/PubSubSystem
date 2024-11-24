@@ -37,7 +37,7 @@ void pollMessages(const std::string &broker_address, const int port, const std::
             {
                 if (!response.messages.empty())
                 {
-                    std::cout << "Subscriber " << subscriber_id << " received new messages for topic " << topic << ":" << std::endl;
+                    std::cout << "Subscriber " << subscriber_id << " received new messages for topic " << topic << ":";
                     for (const auto &message : response.messages)
                     {
                         std::cout << " - " << message << std::endl;

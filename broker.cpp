@@ -119,11 +119,14 @@ private:
     }
 };
 
-int main()
+int main(int argc, char **argv)
 {
-    int port;
-    std::cout << "Enter port number: ";
-    std::cin >> port;
+    if (argc != 2)
+    {
+        std::cerr << "Usage: " << argv[0] << " <port>" << std::endl;
+        return 1;
+    }
+    int port = std::stoi(argv[1]);
     std::shared_ptr<TServerTransport> serverTransport(new TServerSocket(port));
     std::shared_ptr<TTransportFactory> transportFactory(new TBufferedTransportFactory());
     std::shared_ptr<TProtocolFactory> protocolFactory(new TBinaryProtocolFactory());
@@ -135,7 +138,7 @@ int main()
     std::shared_ptr<TProcessor> processor(new BrokerServiceProcessor(handler));
 
     TThreadedServer server(processor, serverTransport, transportFactory, protocolFactory);
-    std::cout << "Broker server started on port " << port << std::endl;
+    // std::cout << "Broker server started on port " << port << std::endl;
     server.serve();
     return 0;
 }
